@@ -710,8 +710,11 @@ static int sandbox_main(const char * root_dir, const char * new_cd, int sandbox_
   // Use `pivot_root()` to avoid bad interaction between `chroot()` and `clone()`,
   // where we get an EPERM on nested sandboxing.
   check(0 == chdir(root_dir));
-  check(0 == syscall(SYS_pivot_root, ".", "."));
-  check(0 == umount2(".", MNT_DETACH));
+  if (syscall(SYS_pivot_root, ".", ".") == 0) {
+    check(0 == umount2(".", MNT_DETACH));
+  } else {
+    check(0 == chroot(root_dir));
+  }
 
   // If we've got a directory to change to, do so, possibly creating it if we need to
   if (new_cd) {
@@ -1139,6 +1142,10 @@ int main(int sandbox_argc, char **sandbox_argv) {
       // zero within this container.
       check(0 == setuid(0));
       check(0 == setgid(0));
+
+      // The /proc mountpoint previously mounted is in the wrong PID namespace;
+      // mount a new procfs over it to to get better values:
+      mount_procfs(sandbox_root);
     } else if (execution_mode == UNPRIVILEGED_CONTAINER_MODE) {
       // If we're in unprivileged container mode, mount the world now that we
       // have supreme cosmic power.
